@@ -1,4 +1,7 @@
 // File: src/middlewares/auth.middleware.js
+// Verifikasi token JWT (payload: { sub: user_id, email } — §8).
+// req.user berisi { id, email } setelah decoding, siap dipakai route berikutnya.
+
 import jwt from 'jsonwebtoken';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'terserah_app_jwt_secret_key_super_aman_2026';
@@ -14,9 +17,14 @@ export function verifyToken(req, res, next) {
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    req.user = decoded; // Berisi { id, email, username }
+    // Normalkan payload lama ({ id }) dan baru ({ sub })
+    req.user = {
+      id: decoded.sub || decoded.id,
+      email: decoded.email,
+      username: decoded.username,
+    };
     next();
   } catch (error) {
-    return res.status(403).json({ message: 'Sesi kedaluwarsa atau token tidak valid' });
+    return res.status(401).json({ message: 'Sesi kedaluwarsa atau token tidak valid' });
   }
 }

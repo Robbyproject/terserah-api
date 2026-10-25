@@ -1,6 +1,8 @@
 // File: src/routes/profile.routes.js
 import { Router } from 'express';
 import { supabase } from '../lib/supabase.js';
+import { verifyToken } from '../middlewares/auth.middleware.js';
+import { MESSAGES, validateEmail } from '../lib/validators.js';
 
 const router = Router();
 
@@ -40,21 +42,53 @@ router.get('/:userId', async (req, res) => {
 });
 
 // 2. Perbarui profil / edit nama & email (PUT /api/profile/:userId)
-router.put('/:userId', async (req, res) => {
+// Auth: Bearer token milik :userId sendiri (§5) + validasi §1 (email format & unik)
+router.put('/:userId', verifyToken, async (req, res) => {
   const { userId } = req.params;
   const { name, email, avatarUrl } = req.body;
 
+  if (req.user.id !== userId) {
+    return res.status(401).json({ message: 'Akses ditolak, token tidak valid untuk pengguna ini' });
+  }
+
+  if (!name || typeof name !== 'string' || !name.trim()) {
+    return res.status(400).json({ message: 'Nama tidak boleh kosong.' });
+  }
+
+  const emailError = validateEmail(typeof email === 'string' ? email.trim() : email);
+  if (emailError) {
+    return res.status(400).json({ message: emailError });
+  }
+
   try {
+    // Cek email unik (di tabel users, kecuali milik sendiri)
+    const { data: sameEmail } = await supabase
+      .from('users')
+      .select('id')
+      .eq('email', email.trim())
+      .ne('id', userId)
+      .maybeSingle();
+
+    if (sameEmail) {
+      return res.status(409).json({ message: MESSAGES.emailTaken });
+    }
+
     const { data, error } = await supabase
       .from('profile')
       .update({
-        username: name,
-        email: email,
+        username: name.trim(),
+        email: email.trim(),
         profile_image: avatarUrl,
       })
       .eq('user_id', userId)
       .select()
       .single();
+
+    // Sekalian sinkron ke tabel users (dipakai login & cek unik)
+    await supabase
+      .from('users')
+      .update({ username: name.trim(), email: email.trim() })
+      .eq('id', userId);
 
     if (error) throw error;
 
