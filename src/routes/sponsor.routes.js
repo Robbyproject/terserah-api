@@ -1,8 +1,16 @@
-// File: src/routes/sponsor.routes.js
 import { Router } from 'express';
 import { supabase } from '../lib/supabase.js';
 
 const router = Router();
+
+const CTA_LABEL = 'Lihat';
+const SPONSOR_ICON = 'local_offer';
+
+function isActiveToday(sponsor, today) {
+  const started = !sponsor.start_date || sponsor.start_date <= today;
+  const notExpired = !sponsor.end_date || sponsor.end_date >= today;
+  return started && notExpired;
+}
 
 router.get('/', async (req, res) => {
   try {
@@ -13,13 +21,19 @@ router.get('/', async (req, res) => {
 
     if (error) throw error;
 
-    // Petakan ke format props SponsorCarousel di frontend
-    const sponsors = (data || []).map((s) => ({
-      id: s.id,
-      name: s.nama_restoran,
-      imageUrl: s.logo_url,
-      tagline: s.tagline || '',
-    }));
+    const today = new Date().toISOString().slice(0, 10);
+
+    // Bentuknya sudah `Sponsor` di src/types/sponsor.ts: carousel merender tile
+    // Material Symbols, jadi logo_url tidak dikirim.
+    const sponsors = (data || [])
+      .filter((sponsor) => isActiveToday(sponsor, today))
+      .map((sponsor) => ({
+        id: sponsor.id,
+        title: sponsor.nama_restoran,
+        tagline: sponsor.tagline || '',
+        ctaLabel: CTA_LABEL,
+        icon: SPONSOR_ICON,
+      }));
 
     res.json(sponsors);
   } catch (error) {
