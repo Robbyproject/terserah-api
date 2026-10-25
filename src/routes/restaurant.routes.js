@@ -1,11 +1,15 @@
 import { Router } from 'express';
-import { fetchNearbyRestaurants } from '../services/google-places.service.js';
+import {
+  fetchNearbyRestaurants,
+  toApiRestaurant,
+} from '../services/google-places.service.js';
+import {
+  clampRadiusMeters,
+  normalizeCriteria,
+  selectMatch,
+} from '../services/match.service.js';
 
 const router = Router();
-
-const DEFAULT_RADIUS_METERS = 3000;
-const MIN_RADIUS_METERS = 100;
-const MAX_RADIUS_METERS = 50000;
 
 function parseCoords({ lat, lng }) {
   const latitude = Number(lat);
@@ -18,12 +22,6 @@ function parseCoords({ lat, lng }) {
   return { latitude, longitude };
 }
 
-function clampRadius(value) {
-  const radius = Number(value);
-  if (!Number.isFinite(radius) || radius <= 0) return DEFAULT_RADIUS_METERS;
-  return Math.min(Math.max(radius, MIN_RADIUS_METERS), MAX_RADIUS_METERS);
-}
-
 // Endpoint daftar restoran terdekat, sudah berbentuk `Restaurant` di frontend.
 router.get('/nearby', async (req, res) => {
   const coords = parseCoords(req.query);
@@ -34,7 +32,7 @@ router.get('/nearby', async (req, res) => {
       .json({ message: 'Parameter lat dan lng wajib diisi dengan benar' });
   }
 
-  const radius = clampRadius(req.query.radius);
+  const radius = clampRadiusMeters(req.query.radius);
 
   try {
     const restaurants = await fetchNearbyRestaurants(
@@ -42,37 +40,50 @@ router.get('/nearby', async (req, res) => {
       coords.longitude,
       radius
     );
-    res.json(restaurants);
+    res.json(restaurants.map(toApiRestaurant));
   } catch (error) {
     res.status(502).json({ message: error.message });
   }
 });
 
-// Endpoint acak Takdir Mode (belum dipakai frontend pada pass ini)
+// Endpoint Takdir Mode. Menerima kriteria dari bottom sheet, mengembalikan
+// `match` plus seluruh `candidates` agar tombol "Cari Lain" bisa mengocok ulang
+// di aplikasi tanpa request baru.
+//
+// Catatan: radius diambil dari `criteria.distance` (1/3/8 km), bukan radius
+// lokasi di pill home — keduanya punya pilihan berbeda dan pilihan di sheet
+// adalah yang paling eksplisit dari pengguna.
 router.post('/match', async (req, res) => {
-  const { lat, lng, distance = '3km', minRating = '4.0' } = req.body;
+  const coords = parseCoords(req.body);
 
-  if (!lat || !lng) {
-    return res.status(400).json({ message: 'Lokasi (lat, lng) diperlukan untuk match' });
+  if (!coords) {
+    return res
+      .status(400)
+      .json({ message: 'Lokasi (lat, lng) diperlukan untuk match' });
   }
 
-  const radiusMap = { '1km': 1000, '3km': 3000, '5km': 5000, '10km': 10000 };
-  const radius = radiusMap[distance] || 3000;
+  const criteria = normalizeCriteria(req.body);
 
   try {
-    const all = await fetchNearbyRestaurants(lat, lng, radius);
-    let filtered = all.filter((r) => r.rating >= parseFloat(minRating));
+    const nearby = await fetchNearbyRestaurants(
+      coords.latitude,
+      coords.longitude,
+      criteria.radiusMeters
+    );
 
-    if (filtered.length === 0) {
-      filtered = all;
+    if (nearby.length === 0) {
+      return res
+        .status(404)
+        .json({ message: 'Tidak ada restoran di sekitar lokasi ini' });
     }
 
-    if (filtered.length === 0) {
-      return res.status(404).json({ message: 'Tidak ada restoran yang ditemukan' });
-    }
+    const result = selectMatch(nearby, criteria);
 
-    const selected = filtered[Math.floor(Math.random() * filtered.length)];
-    res.json(selected);
+    res.json({
+      ...result,
+      match: toApiRestaurant(result.match),
+      candidates: result.candidates.map(toApiRestaurant),
+    });
   } catch (error) {
     res.status(502).json({ message: error.message });
   }

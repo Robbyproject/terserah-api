@@ -28,6 +28,9 @@ const FIELD_MASK = [
   'places.priceLevel',
   'places.priceRange',
   'places.primaryType',
+  // `places.types` (Pro SKU) dipakai untuk filter craving di match.service.js.
+  // File ini sudah meminta field Enterprise, jadi tidak ada kenaikan tagihan.
+  'places.types',
   'places.photos',
   'places.regularOpeningHours',
   'places.timeZone',
@@ -232,7 +235,23 @@ function toRestaurant(place, origin, apiKey) {
     phone: place.nationalPhoneNumber || null,
     website: place.websiteUri || null,
     budgetTier: toBudgetTier(price),
+    // Field internal: dipakai match.service.js untuk filter craving, lalu
+    // dibuang oleh toApiRestaurant sebelum dikirim ke aplikasi.
+    primaryType: place.primaryType ?? null,
+    types: Array.isArray(place.types) ? place.types : [],
   };
+}
+
+const INTERNAL_FIELDS = new Set(['primaryType', 'types']);
+
+// Bentuk akhir untuk aplikasi: hanya field yang ada di `Restaurant` frontend,
+// dan tanpa key bernilai null supaya field opsional benar-benar absen.
+export function toApiRestaurant(restaurant) {
+  return Object.fromEntries(
+    Object.entries(restaurant).filter(
+      ([key, value]) => !INTERNAL_FIELDS.has(key) && value !== null && value !== undefined
+    )
+  );
 }
 
 function nominatimAreaName(address) {
