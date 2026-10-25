@@ -4,7 +4,11 @@
 
 import jwt from 'jsonwebtoken';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'terserah_app_jwt_secret_key_super_aman_2026';
+// Fallback HARUS sama dengan yang dipakai user.routes.js saat menandatangani
+// token. Sebelumnya di sini '..._super_aman_2026' sementara route memakai
+// 'terserah_jwt_secret_key_2026', jadi semua token gagal diverifikasi kalau
+// JWT_SECRET tidak diset di environment.
+const JWT_SECRET = process.env.JWT_SECRET || 'terserah_jwt_secret_key_2026';
 
 export function verifyToken(req, res, next) {
   const authHeader = req.headers.authorization;

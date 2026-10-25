@@ -66,7 +66,7 @@ router.put('/:userId', verifyToken, async (req, res) => {
       .from('users')
       .select('id')
       .eq('email', email.trim())
-      .ne('id', userId)
+      .neq('id', userId)
       .maybeSingle();
 
     if (sameEmail) {
