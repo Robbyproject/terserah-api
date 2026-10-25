@@ -41,7 +41,10 @@ router.get('/reverse', async (req, res) => {
 
     res.json({
       id: locationId(coords.latitude, coords.longitude),
-      label: data.areaName,
+      // `label` = sedetail mungkin (nama jalan), `areaLabel` = kecamatan/kota
+      // untuk baris kedua di sheet.
+      label: data.preciseName ?? data.areaName,
+      areaLabel: data.areaName,
       radiusKm: parseRadiusKm(req.query.radiusKm),
       latitude: coords.latitude,
       longitude: coords.longitude,
@@ -68,7 +71,9 @@ router.get('/resolve', async (req, res) => {
 
     res.json({
       id: locationId(data.location.lat, data.location.lng),
+      // Area yang diketik tetap ditampilkan sebagai area, bukan nama jalan.
       label: data.areaName,
+      areaLabel: data.areaName,
       radiusKm: parseRadiusKm(req.query.radiusKm),
       latitude: data.location.lat,
       longitude: data.location.lng,

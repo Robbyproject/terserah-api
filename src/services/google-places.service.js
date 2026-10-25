@@ -14,6 +14,7 @@ const NOMINATIM_TIMEOUT_MS = 8000;
 const GEOCODE_CACHE_TTL_MS = 10 * 60 * 1000;
 
 const geocodeCache = new Map();
+const reverseCache = new Map();
 
 // Setiap field di bawah ini masih dalam SKU Enterprise/Pro yang sama, kecuali
 // editorialSummary / generativeSummary / reviewSummary yang menaikkan tagihan ke
@@ -276,14 +277,49 @@ function nominatimAreaName(address) {
   return `${subdistrict}, ${city}`;
 }
 
+// Label paling spesifik yang masih enak dibaca: nama jalan (dengan nomor kalau
+// ada), lalu lingkungan, lalu kecamatan/kota. `nominatimAreaName` sengaja tetap
+// area-level karena dipakai sebagai baris kedua di sheet.
+function nominatimPreciseName(address) {
+  if (!address) return null;
+
+  const street = address.road
+    ? address.house_number
+      ? `${address.road} No. ${address.house_number}`
+      : address.road
+    : null;
+
+  return (
+    street ||
+    address.neighbourhood ||
+    address.quarter ||
+    address.suburb ||
+    address.village ||
+    address.hamlet ||
+    address.city_district ||
+    address.city ||
+    null
+  );
+}
+
 export async function reverseGeocode(lat, lng) {
+  // Kebijakan Nominatim mewajibkan cache; lokasi juga di-resolve ulang setiap
+  // pull-to-refresh dan setiap sheet dibuka. Kunci 5 desimal ~ 1 meter.
+  const cacheKey = `${Number(lat).toFixed(5)},${Number(lng).toFixed(5)}`;
+  const cached = reverseCache.get(cacheKey);
+
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.data;
+  }
+
   try {
     const { data } = await axios.get(NOMINATIM_REVERSE_URL, {
       params: {
         format: 'jsonv2',
         lat,
         lon: lng,
-        zoom: 16,
+        // zoom 18 = tingkat jalan/bangunan; zoom 16 hanya sampai lingkungan.
+        zoom: 18,
         addressdetails: 1,
         'accept-language': 'id',
       },
@@ -292,18 +328,30 @@ export async function reverseGeocode(lat, lng) {
     });
 
     if (!data?.address) {
-      return { formattedAddress: 'Lokasi tidak dikenal', areaName: 'Sekitar Anda' };
+      return {
+        formattedAddress: 'Lokasi tidak dikenal',
+        areaName: 'Sekitar Anda',
+        preciseName: null,
+      };
     }
 
     const displayName = data.display_name || 'Sekitar Anda';
-
-    return {
+    const result = {
       formattedAddress: displayName,
       areaName: nominatimAreaName(data.address) || displayName.split(',')[0],
+      preciseName: nominatimPreciseName(data.address),
     };
+
+    reverseCache.set(cacheKey, {
+      data: result,
+      expiresAt: Date.now() + GEOCODE_CACHE_TTL_MS,
+    });
+
+    return result;
   } catch (error) {
+    // Kegagalan tidak di-cache supaya percobaan berikutnya tetap memanggil API.
     console.error('Error reverse geocoding (Nominatim):', error.message);
-    return { formattedAddress: 'Sekitar Anda', areaName: 'Sekitar Anda' };
+    return { formattedAddress: 'Sekitar Anda', areaName: 'Sekitar Anda', preciseName: null };
   }
 }
 
