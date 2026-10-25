@@ -3,23 +3,52 @@ import { fetchNearbyRestaurants } from '../services/google-places.service.js';
 
 const router = Router();
 
-// Endpoint daftar restoran terdekat
-router.get('/nearby', async (req, res) => {
-  const { lat, lng, radius = 3000 } = req.query;
+const DEFAULT_RADIUS_METERS = 3000;
+const MIN_RADIUS_METERS = 100;
+const MAX_RADIUS_METERS = 50000;
 
-  if (!lat || !lng) {
-    return res.status(400).json({ message: 'Parameter lat dan lng wajib disertakan' });
+function parseCoords({ lat, lng }) {
+  const latitude = Number(lat);
+  const longitude = Number(lng);
+
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+  if (latitude < -90 || latitude > 90) return null;
+  if (longitude < -180 || longitude > 180) return null;
+
+  return { latitude, longitude };
+}
+
+function clampRadius(value) {
+  const radius = Number(value);
+  if (!Number.isFinite(radius) || radius <= 0) return DEFAULT_RADIUS_METERS;
+  return Math.min(Math.max(radius, MIN_RADIUS_METERS), MAX_RADIUS_METERS);
+}
+
+// Endpoint daftar restoran terdekat, sudah berbentuk `Restaurant` di frontend.
+router.get('/nearby', async (req, res) => {
+  const coords = parseCoords(req.query);
+
+  if (!coords) {
+    return res
+      .status(400)
+      .json({ message: 'Parameter lat dan lng wajib diisi dengan benar' });
   }
 
+  const radius = clampRadius(req.query.radius);
+
   try {
-    const restaurants = await fetchNearbyRestaurants(lat, lng, Number(radius));
+    const restaurants = await fetchNearbyRestaurants(
+      coords.latitude,
+      coords.longitude,
+      radius
+    );
     res.json(restaurants);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.status(502).json({ message: error.message });
   }
 });
 
-// Endpoint acak Takdir Mode
+// Endpoint acak Takdir Mode (belum dipakai frontend pada pass ini)
 router.post('/match', async (req, res) => {
   const { lat, lng, distance = '3km', minRating = '4.0' } = req.body;
 
@@ -45,7 +74,7 @@ router.post('/match', async (req, res) => {
     const selected = filtered[Math.floor(Math.random() * filtered.length)];
     res.json(selected);
   } catch (error) {
-    res.status(500).json({ message: error.message });
+    res.status(502).json({ message: error.message });
   }
 });
 
