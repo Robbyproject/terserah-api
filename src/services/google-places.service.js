@@ -1,31 +1,46 @@
 // File: src/services/google-places.service.js
 import axios from 'axios';
 
-// 1. Reverse Geocoding
+// 1. Reverse Geocoding (Menggunakan OpenStreetMap Nominatim - Gratis tanpa Billing Google Cloud)
 export async function reverseGeocode(lat, lng) {
-  const GOOGLE_API_KEY = process.env.GOOGLE_MAPS_API_KEY;
   try {
-    const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${GOOGLE_API_KEY}&language=id`;
-    const res = await axios.get(url);
+    const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=16&addressdetails=1&accept-language=id`;
+    const res = await axios.get(url, {
+      headers: {
+        'User-Agent': 'TerserahApp/1.0',
+      },
+    });
 
-    if (res.data.status === 'OK' && res.data.results.length > 0) {
-      const result = res.data.results[0];
-      const subdistrict = result.address_components.find((c) =>
-        c.types.includes('administrative_area_level_4') || c.types.includes('sublocality')
-      )?.long_name;
-      const city = result.address_components.find((c) =>
-        c.types.includes('administrative_area_level_2')
-      )?.long_name;
+    if (res.data && res.data.address) {
+      const addr = res.data.address;
+      const subdistrict =
+        addr.suburb ||
+        addr.village ||
+        addr.neighbourhood ||
+        addr.quarter ||
+        addr.road;
+      const city =
+        addr.city_district ||
+        addr.city ||
+        addr.town ||
+        addr.municipality ||
+        addr.county;
+
+      const displayName = res.data.display_name || 'Sekitar Anda';
+      const areaName = subdistrict
+        ? `${subdistrict}${city ? `, ${city}` : ''}`
+        : displayName.split(',')[0];
 
       return {
-        formattedAddress: result.formatted_address,
-        areaName: subdistrict ? `${subdistrict}, ${city || ''}` : result.formatted_address.split(',')[0],
+        formattedAddress: displayName,
+        areaName,
       };
     }
+
     return { formattedAddress: 'Lokasi tidak dikenal', areaName: 'Sekitar Anda' };
   } catch (error) {
     console.error('Error reverse geocoding:', error.message);
-    throw error;
+    return { formattedAddress: 'Sekitar Anda', areaName: 'Sekitar Anda' };
   }
 }
 
